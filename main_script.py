@@ -1,103 +1,98 @@
 import tkinter as tk
-import numpy as np
-from autocorrect_package.autocorrection import Autocorrection
+from tkinter import ttk, filedialog, messagebox
+from transformers import pipeline
+from spellchecker import SpellChecker
 
-class AutoCorrectApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
+model = pipeline("text2text-generation", model="t5-small")
+spell = SpellChecker()
 
-        # Initialize the Autocorrection object with the desired file
-        self.checker = Autocorrection("autocorrect_package/corpus.txt")
-
-        # Create an input box(Text widget) for the user to type
-        self.input_box = tk.Text(self, wrap="word")
-        self.input_box.pack()
-
-        # Creating a Listbox widget to display suggestions
-        self.suggestion_listbox = tk.Listbox(self)
-        self.suggestion_listbox.pack()
-
-        # Bind the key release event to call the on_key_release method
-        self.input_box.bind("<KeyRelease>", self.on_key_release)
-
-        # Bind the space bar event to call the on_space_bar_press method
-        self.input_box.bind("<space>", self.on_space_bar_press)
-        
-        # Bind the listbox select event to call the on_listbox_select method
-        self.suggestion_listbox.bind("<<ListboxSelect>>", self.on_listbox_select)
-
-        # Initialize a variable to store the current word being typed
-        self.current_word = ""
-
-    def on_key_release(self, event):
-        # Get the current position of the cursor(insertion point)
-        cursor_position = self.input_box.index(tk.INSERT)
-
-        # Get the word currently being typed by the user
-        current_line = self.input_box.get("insert linestart", cursor_position).split()
-        self.current_word = current_line[-1]
-
-        # Wait for 2 seconds of inactivity(no key presses) before suggesting autocorrections
-        self.after(2000, self.autocorrect_suggestions)
-
-    def on_space_bar_press(self, event):
-        # Check if any suggestion was selected from the suggestion box
-        if self.suggestion_listbox.curselection():
-            return
-
-        # If no suggestion is selected, proceed with autocorrection logic
-
-        # Get the current word being typed by the user
-        word = self.current_word.lower()
-
-        # Perform the autocorrection logic using the Autocorrection class
-        corrections = self.checker.correct_spelling(word)
-
-        # Get the word with the highest probability from the corrections list
-        if corrections:
-            probs = np.array([c[1] for c in corrections])
-            best_ix = np.argmax(probs)
-            correct = corrections[best_ix][0]
-
-            highest_prob_word = correct
-
-            # Replace the wrong word with the word with the highest probability
-            if highest_prob_word != word:
-                self.input_box.delete(f"insert-{len(word)}c", "insert")
-                self.input_box.insert("insert", highest_prob_word + "")
-
-            print(f"Did you mean {highest_prob_word}?")
-
-
-    def autocorrect_suggestions(self):
-        # Get the current word being typed by the user
-        word = self.current_word.lower()
-
-        # Perform the autocorrection logic using the Autocorrection class
-        corrections = self.checker.correct_spelling(word)
-
-        # Clear the existing suggestions from the listbox
-        self.suggestion_listbox.delete(0, tk.END)
-
-        # Show the suggestions in the listbox
-        if corrections:
-            for correction in corrections:
-                self.suggestion_listbox.insert(tk.END, correction[0])
+def correctSpelling():
+    inputText = textInput.get("1.0", "end-1c")
     
-    def on_listbox_select(self, event):
-        # Get the selected word from the listbox
-        selected_word = self.suggestion_listbox.get(self.suggestion_listbox.curselection())
+    if not inputText.strip():
+        messagebox.showwarning("Input Error", "Please enter some text to correct.")
+        return
 
-        # Replace the current word in the input box with the selected word
-        self.input_box.delete(f"insert-{len(self.current_word)}c", "insert")
-        self.input_box.insert("insert", selected_word + " ")
+    words = inputText.split()
+    correctedWords = [spell.correction(word) for word in words]
+    correctedText = " ".join(correctedWords)
+    
+    finalText = model(f"correct spelling: {correctedText}")
+    
+    textOutput.delete("1.0", "end")
+    textOutput.insert(tk.END, finalText[0]['generated_text'])
+    
+    historyList.insert(tk.END, finalText[0]['generated_text'])
 
-        # Clear the existing suggestions from the listbox after selecting one
-        self.suggestion_listbox.delete(0, tk.END)
+def clearText():
+    textInput.delete("1.0", "end")
+    textOutput.delete("1.0", "end")
 
-    def run(self):
-        self.mainloop()
+def saveText():
+    correctedText = textOutput.get("1.0", "end-1c")
+    if not correctedText.strip():
+        messagebox.showwarning("Save Error", "There is no corrected text to save.")
+        return
 
-if __name__ == "__main__":
-    app = AutoCorrectApp()
-    app.run()
+    filePath = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+    if filePath:
+        with open(filePath, 'w') as file:
+            file.write(correctedText)
+        messagebox.showinfo("Save Successful", f"Text saved to {filePath}")
+
+def viewHistory():
+    try:
+        selectedHistory = historyList.get(historyList.curselection())
+        textOutput.delete("1.0", "end")
+        textOutput.insert(tk.END, selectedHistory)
+    except tk.TclError:
+        messagebox.showwarning("History Error", "Please select an entry from the history.")
+
+window = tk.Tk()
+window.title("Spelling Correction System")
+window.geometry("650x600")
+window.resizable(True, True)
+window.configure(bg="#F5F5F5")
+
+inputLabel = ttk.Label(window, text="Enter Text :", font=("Arial", 12, "bold"), background="#F5F5F5")
+inputLabel.pack(pady=10)
+
+textInput = tk.Text(window, height=6, width=60, wrap=tk.WORD, font=("Arial", 12), bd=2, relief="solid")
+textInput.pack(pady=10)
+
+correctButton = ttk.Button(window, text="Correct Spelling", command=correctSpelling, width=20, style="TButton")
+correctButton.pack(pady=10)
+
+clearButton = ttk.Button(window, text="Clear Text", command=clearText, width=20, style="TButton")
+clearButton.pack(pady=5)
+
+saveButton = ttk.Button(window, text="Save Corrected Text", command=saveText, width=20, style="TButton")
+saveButton.pack(pady=5)
+
+outputLabel = ttk.Label(window, text="Corrected Text:", font=("Arial", 12, "bold"), background="#F5F5F5")
+outputLabel.pack(pady=10)
+
+textOutput = tk.Text(window, height=6, width=60, wrap=tk.WORD, font=("Arial", 12), bd=2, relief="solid")
+textOutput.pack(pady=10)
+
+scrollbarInput = tk.Scrollbar(window, command=textInput.yview)
+scrollbarInput.pack(side=tk.RIGHT, fill=tk.Y)
+textInput.config(yscrollcommand=scrollbarInput.set)
+
+scrollbarOutput = tk.Scrollbar(window, command=textOutput.yview)
+scrollbarOutput.pack(side=tk.RIGHT, fill=tk.Y)
+textOutput.config(yscrollcommand=scrollbarOutput.set)
+
+historyLabel = ttk.Label(window, text="History of Corrected Texts:", font=("Arial", 12, "bold"), background="#F5F5F5")
+historyLabel.pack(pady=10)
+
+historyList = tk.Listbox(window, height=5, width=60, font=("Arial", 12), bd=2, relief="solid")
+historyList.pack(pady=10)
+
+viewButton = ttk.Button(window, text="View Selected History", command=viewHistory, width=20, style="TButton")
+viewButton.pack(pady=5)
+
+style = ttk.Style(window)
+style.configure("TButton", font=("Arial", 12), width=20, padding=6)
+
+window.mainloop()
